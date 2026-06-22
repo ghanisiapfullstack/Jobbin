@@ -10,15 +10,16 @@ import (
 
 func init() {
 	config := facades.Config()
-
 	dbHost := config.Env("DB_HOST", "127.0.0.1")
 	dbPort := config.Env("DB_PORT", "5432")
 	dbUser := config.Env("DB_USERNAME", "jobbin")
 	dbPass := config.Env("DB_PASSWORD", "jobbin_secret")
 	dbName := config.Env("DB_DATABASE", "jobbin")
+	sslMode := config.Env("DB_SSLMODE", "disable")
 
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		dbHost, dbPort, dbUser, dbPass, dbName,
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		dbHost, dbPort, dbUser, dbPass, dbName, sslMode,
 	)
 
 	config.Add("database", map[string]any{
@@ -30,7 +31,7 @@ func init() {
 				"database": dbName,
 				"username": dbUser,
 				"password": dbPass,
-				"sslmode":  "disable",
+				"sslmode":  sslMode,
 				"singular": false,
 				"prefix":   "",
 				"schema":   config.Env("DB_SCHEMA", "public"),
