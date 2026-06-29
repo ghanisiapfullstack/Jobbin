@@ -7,9 +7,11 @@ import (
 func init() {
 	config := facades.Config()
 	config.Add("cors", map[string]any{
-		"paths":                []string{"*"},
+		// Kosongkan paths supaya Goravel built-in Cors() tidak aktif
+		// CORS ditangani oleh custom middleware di bootstrap/app.go
+		"paths":                []string{},
 		"allowed_methods":      []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		"allowed_origins": []string{"https://www.jobbin.site", "http://localhost:5173"},
+		"allowed_origins":      []string{"https://www.jobbin.site", "http://localhost:5173"},
 		"allowed_headers":      []string{"Content-Type", "Authorization", "Accept", "X-Requested-With"},
 		"exposed_headers":      []string{},
 		"max_age":              86400,
