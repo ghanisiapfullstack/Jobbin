@@ -32,10 +32,15 @@ func Boot() contractsfoundation.Application {
 
 func Schedules() []contractsschedule.Event {
 	reminderSvc := services.NewReminderService()
+	auditSvc := services.NewAuditService()
 	return []contractsschedule.Event{
 		// Kirim reminder email setiap hari jam 07.00
 		schedule.NewCallbackEvent(func() {
 			reminderSvc.SendDailyReminders()
 		}).DailyAt("07:00"),
+		// Cleanup audit logs lebih dari 90 hari — setiap hari jam 03.00
+		schedule.NewCallbackEvent(func() {
+			_ = auditSvc.CleanupOldLogs()
+		}).DailyAt("03:00"),
 	}
 }

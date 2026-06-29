@@ -70,7 +70,6 @@ func (r *AuthController) Register(ctx http.Context) http.Response {
 	// Kirim email verifikasi via Resend
 	emailSvc := services.NewEmailService()
 	if err := emailSvc.SendVerificationEmail(user.Email, user.Name, token); err != nil {
-		// Log error tapi jangan gagalkan register
 		facades.Log().Warningf("Failed to send verification email: %v", err)
 	}
 
@@ -148,6 +147,8 @@ func (r *AuthController) ResendVerification(ctx http.Context) http.Response {
 
 // Login POST /api/v1/auth/login
 func (r *AuthController) Login(ctx http.Context) http.Response {
+	auditSvc := services.NewAuditService()
+
 	validator, err := facades.Validation().Make(ctx, ctx.Request().All(), map[string]string{
 		"email":    "required|email",
 		"password": "required",
@@ -181,6 +182,9 @@ func (r *AuthController) Login(ctx http.Context) http.Response {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal membuat token", "error": err.Error()})
 	}
 
+	// Audit log
+	auditSvc.Log(ctx, &user.ID, services.ActionLogin, nil)
+
 	return ctx.Response().Json(200, http.Json{
 		"message": "Login berhasil",
 		"data": map[string]interface{}{
@@ -204,19 +208,29 @@ func (r *AuthController) Me(ctx http.Context) http.Response {
 	return ctx.Response().Json(200, http.Json{
 		"message": "Berhasil",
 		"data": map[string]interface{}{
-			"id":               user.ID,
-			"name":             user.Name,
-			"email":            user.Email,
+			"id":                user.ID,
+			"name":              user.Name,
+			"email":             user.Email,
 			"email_verified_at": user.EmailVerifiedAt,
-			"created_at":       user.CreatedAt,
+			"created_at":        user.CreatedAt,
 		},
 	})
 }
 
 // Logout POST /api/v1/auth/logout
 func (r *AuthController) Logout(ctx http.Context) http.Response {
+	auditSvc := services.NewAuditService()
+
+	// Ambil user ID sebelum logout
+	var user models.User
+	facades.Auth(ctx).User(&user)
+	if user.ID != 0 {
+		auditSvc.Log(ctx, &user.ID, services.ActionLogout, nil)
+	}
+
 	if err := facades.Auth(ctx).Logout(); err != nil {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal logout", "error": err.Error()})
 	}
+
 	return ctx.Response().Json(200, http.Json{"message": "Logout berhasil"})
 }

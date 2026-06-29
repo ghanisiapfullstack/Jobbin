@@ -7,6 +7,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"jobbin/backend/app/helpers"
 	"jobbin/backend/app/models"
+	"jobbin/backend/app/services"
 )
 
 type ApplicationController struct{}
@@ -136,6 +137,8 @@ func (r *ApplicationController) Store(ctx http.Context) http.Response {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal menyimpan", "error": err.Error()})
 	}
 
+	appID := application.ID
+	services.NewAuditService().Log(ctx, &userID, services.ActionCreateApp, &appID)
 	return ctx.Response().Json(201, http.Json{"message": "Lamaran berhasil ditambahkan", "data": application})
 }
 
@@ -208,6 +211,8 @@ func (r *ApplicationController) Update(ctx http.Context) http.Response {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal mengupdate", "error": err.Error()})
 	}
 
+	appID := application.ID
+	services.NewAuditService().Log(ctx, &userID, services.ActionUpdateApp, &appID)
 	return ctx.Response().Json(200, http.Json{"message": "Lamaran berhasil diupdate", "data": application})
 }
 
@@ -285,6 +290,12 @@ func (r *ApplicationController) ToggleArchive(ctx http.Context) http.Response {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal mengupdate", "error": err.Error()})
 	}
 
+	action := services.ActionArchiveApp
+	if !application.IsArchived {
+		action = services.ActionRestoreApp
+	}
+	appID := application.ID
+	services.NewAuditService().Log(ctx, &userID, action, &appID)
 	message := "Lamaran diarsipkan"
 	if !application.IsArchived {
 		message = "Lamaran dipulihkan dari arsip"
@@ -319,5 +330,7 @@ func (r *ApplicationController) Destroy(ctx http.Context) http.Response {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal menghapus", "error": err.Error()})
 	}
 
+	appID := application.ID
+	services.NewAuditService().Log(ctx, &userID, services.ActionDeleteApp, &appID)
 	return ctx.Response().Json(200, http.Json{"message": "Lamaran berhasil dihapus"})
 }

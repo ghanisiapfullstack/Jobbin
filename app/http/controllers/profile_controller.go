@@ -4,6 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 	"jobbin/backend/app/models"
+	"jobbin/backend/app/services"
 )
 
 type ProfileController struct{}
@@ -22,11 +23,11 @@ func (r *ProfileController) Show(ctx http.Context) http.Response {
 	return ctx.Response().Json(200, http.Json{
 		"message": "Berhasil",
 		"data": map[string]interface{}{
-			"id":               user.ID,
-			"name":             user.Name,
-			"email":            user.Email,
+			"id":                user.ID,
+			"name":              user.Name,
+			"email":             user.Email,
 			"email_verified_at": user.EmailVerifiedAt,
-			"created_at":       user.CreatedAt,
+			"created_at":        user.CreatedAt,
 		},
 	})
 }
@@ -54,6 +55,9 @@ func (r *ProfileController) UpdateName(ctx http.Context) http.Response {
 	if err := facades.Orm().Query().Save(&user); err != nil {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal menyimpan", "error": err.Error()})
 	}
+
+	// Audit log
+	services.NewAuditService().Log(ctx, &user.ID, services.ActionUpdateProfile, nil)
 
 	return ctx.Response().Json(200, http.Json{
 		"message": "Profil berhasil diupdate",
@@ -104,6 +108,9 @@ func (r *ProfileController) UpdatePassword(ctx http.Context) http.Response {
 	if err := facades.Orm().Query().Save(&user); err != nil {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal menyimpan", "error": err.Error()})
 	}
+
+	// Audit log
+	services.NewAuditService().Log(ctx, &user.ID, services.ActionChangePassword, nil)
 
 	return ctx.Response().Json(200, http.Json{"message": "Password berhasil diupdate"})
 }
