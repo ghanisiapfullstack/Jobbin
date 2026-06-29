@@ -5,6 +5,7 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
+	"jobbin/backend/app/helpers"
 	"jobbin/backend/app/models"
 )
 
@@ -109,18 +110,20 @@ func (r *ApplicationController) Store(ctx http.Context) http.Response {
 
 	application := models.Application{
 		UserID:   userID,
-		JobTitle: ctx.Request().Input("job_title"),
-		Company:  ctx.Request().Input("company"),
+		JobTitle: helpers.SanitizeString(ctx.Request().Input("job_title")),
+		Company:  helpers.SanitizeString(ctx.Request().Input("company")),
 		Status:   status,
 		Position: position,
 	}
 
 	// Optional fields
 	if url := ctx.Request().Input("url"); url != "" {
-		application.URL = &url
+		sanitizedURL := helpers.SanitizeString(url)
+		application.URL = &sanitizedURL
 	}
 	if notes := ctx.Request().Input("notes"); notes != "" {
-		application.Notes = &notes
+		sanitizedNotes := helpers.SanitizeString(notes)
+		application.Notes = &sanitizedNotes
 	}
 	if appliedDate := ctx.Request().Input("applied_date"); appliedDate != "" {
 		application.AppliedDate = &appliedDate
@@ -169,17 +172,19 @@ func (r *ApplicationController) Update(ctx http.Context) http.Response {
 	}
 
 	// Update fields
-	application.JobTitle = ctx.Request().Input("job_title", application.JobTitle)
-	application.Company = ctx.Request().Input("company", application.Company)
+	application.JobTitle = helpers.SanitizeString(ctx.Request().Input("job_title", application.JobTitle))
+	application.Company = helpers.SanitizeString(ctx.Request().Input("company", application.Company))
 	application.Status = ctx.Request().Input("status", application.Status)
 
 	if url := ctx.Request().Input("url"); url != "" {
-		application.URL = &url
+		sanitizedURL := helpers.SanitizeString(url)
+		application.URL = &sanitizedURL
 	} else {
 		application.URL = nil
 	}
 	if notes := ctx.Request().Input("notes"); notes != "" {
-		application.Notes = &notes
+		sanitizedNotes := helpers.SanitizeString(notes)
+		application.Notes = &sanitizedNotes
 	} else {
 		application.Notes = nil
 	}
