@@ -3,9 +3,10 @@ package routes
 import (
 	"time"
 
+	"jobbin/backend/app/facades"
 	"jobbin/backend/app/http/controllers"
 	"jobbin/backend/app/http/middleware"
-	"jobbin/backend/app/facades"
+
 	"github.com/goravel/framework/contracts/route"
 )
 
@@ -14,11 +15,14 @@ func Api() {
 	applicationController := controllers.NewApplicationController()
 	reminderController := controllers.NewReminderController()
 	profileController := controllers.NewProfileController()
+
 	jwtMiddleware := middleware.NewJwtMiddleware()
-	loginRateLimit := middleware.NewRateLimitMiddleware(5, time.Minute)
+	loginRateLimit := middleware.NewRateLimitMiddleware(5, time.Minute)        // 5 req/menit — login
+	publicRateLimit := middleware.NewRateLimitMiddleware(20, time.Minute)      // 20 req/menit — public endpoints
+	protectedRateLimit := middleware.NewRateLimitMiddleware(100, time.Minute)  // 100 req/menit — protected endpoints
 
 	// Public auth routes
-	facades.Route().Prefix("api/v1/auth").Group(func(router route.Router) {
+	facades.Route().Prefix("api/v1/auth").Middleware(publicRateLimit.Handle()).Group(func(router route.Router) {
 		router.Post("/register", authController.Register)
 		router.Post("/verify-email", authController.VerifyEmail)
 		router.Post("/resend-verification", authController.ResendVerification)
@@ -26,13 +30,13 @@ func Api() {
 	})
 
 	// Protected auth routes
-	facades.Route().Prefix("api/v1/auth").Middleware(jwtMiddleware.Handle()).Group(func(router route.Router) {
+	facades.Route().Prefix("api/v1/auth").Middleware(jwtMiddleware.Handle(), protectedRateLimit.Handle()).Group(func(router route.Router) {
 		router.Get("/me", authController.Me)
 		router.Post("/logout", authController.Logout)
 	})
 
 	// Applications routes (semua protected)
-	facades.Route().Prefix("api/v1").Middleware(jwtMiddleware.Handle()).Group(func(router route.Router) {
+	facades.Route().Prefix("api/v1").Middleware(jwtMiddleware.Handle(), protectedRateLimit.Handle()).Group(func(router route.Router) {
 		router.Get("/applications", applicationController.Index)
 		router.Get("/applications/{id}", applicationController.Show)
 		router.Post("/applications", applicationController.Store)
