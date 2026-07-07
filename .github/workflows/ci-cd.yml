@@ -1,4 +1,4 @@
-name: Backend CI/CD
+name: Backend CI
 
 on:
   push:
@@ -7,11 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  # ─── CI: Build + Test ───────────────────────────────────────
   ci:
     name: Build & Test
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -29,18 +27,3 @@ jobs:
 
       - name: Vet
         run: go vet ./...
-
-  # ─── CD: Deploy ke Render (hanya saat push ke main) ─────────
-  deploy:
-    name: Deploy to Render
-    needs: ci
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Trigger Render deploy
-        run: |
-          curl -s -X POST "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}" \
-            -H "Content-Type: application/json" \
-            --fail
-          echo "Deploy triggered successfully"
