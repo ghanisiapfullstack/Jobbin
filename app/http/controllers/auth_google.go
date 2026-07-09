@@ -1,51 +1,71 @@
 package controllers
 
 import (
-	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
-	"github.com/goravel/framework/contracts/http"
+	contractshttp "github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
 	"github.com/goravel/framework/support/carbon"
-	"google.golang.org/api/idtoken"
 	"jobbin/backend/app/models"
 	"jobbin/backend/app/services"
 )
 
+type googleUserInfo struct {
+	Sub           string `json:"sub"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
+}
+
 // GoogleAuth POST /api/v1/auth/google
-func (r *AuthController) GoogleAuth(ctx http.Context) http.Response {
+func (r *AuthController) GoogleAuth(ctx contractshttp.Context) contractshttp.Response {
 	auditSvc := services.NewAuditService()
 
-	// Validasi input
-	credential := ctx.Request().Input("credential")
-	if credential == "" {
-		return ctx.Response().Json(422, http.Json{"message": "Google credential wajib diisi"})
+	// Terima access_token dari FE
+	accessToken := ctx.Request().Input("credential")
+	if accessToken == "" {
+		return ctx.Response().Json(422, contractshttp.Json{"message": "Google credential wajib diisi"})
 	}
 
-	// Verify Google token
-	clientID := facades.Config().Env("GOOGLE_CLIENT_ID", "").(string)
-	payload, err := idtoken.Validate(context.Background(), credential, clientID)
+	// Verify access_token via Google userinfo endpoint
+	req, err := http.NewRequest("GET", "https://www.googleapis.com/oauth2/v3/userinfo", nil)
 	if err != nil {
-		return ctx.Response().Json(401, http.Json{"message": "Token Google tidak valid", "error": err.Error()})
+		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat request ke Google"})
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		return ctx.Response().Json(401, contractshttp.Json{"message": "Token Google tidak valid"})
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membaca response Google"})
 	}
 
-	// Ambil data dari Google payload
-	googleID := payload.Subject
-	email, _ := payload.Claims["email"].(string)
-	name, _ := payload.Claims["name"].(string)
-	avatar, _ := payload.Claims["picture"].(string)
-	emailVerified, _ := payload.Claims["email_verified"].(bool)
-
-	if email == "" {
-		return ctx.Response().Json(422, http.Json{"message": "Email tidak ditemukan dari akun Google"})
+	var googleUser googleUserInfo
+	if err := json.Unmarshal(body, &googleUser); err != nil {
+		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal parse response Google"})
 	}
 
-	if !emailVerified {
-		return ctx.Response().Json(422, http.Json{"message": "Email Google belum diverifikasi"})
+	if googleUser.Email == "" {
+		return ctx.Response().Json(422, contractshttp.Json{"message": "Email tidak ditemukan dari akun Google"})
+	}
+
+	if !googleUser.EmailVerified {
+		return ctx.Response().Json(422, contractshttp.Json{"message": "Email Google belum diverifikasi"})
 	}
 
 	// Normalisasi email
-	email = strings.ToLower(strings.TrimSpace(email))
+	email := strings.ToLower(strings.TrimSpace(googleUser.Email))
 
 	// Cek user existing
 	var user models.User
@@ -54,9 +74,9 @@ func (r *AuthController) GoogleAuth(ctx http.Context) http.Response {
 	if user.ID != 0 {
 		// User sudah ada — merge google_id kalau belum ada
 		if user.GoogleID == nil {
-			user.GoogleID = &googleID
-			if user.Avatar == nil && avatar != "" {
-				user.Avatar = &avatar
+			user.GoogleID = &googleUser.Sub
+			if user.Avatar == nil && googleUser.Picture != "" {
+				user.Avatar = &googleUser.Picture
 			}
 			facades.Orm().Query().Save(&user)
 		}
@@ -64,27 +84,27 @@ func (r *AuthController) GoogleAuth(ctx http.Context) http.Response {
 		// User baru — buat akun otomatis
 		now := carbon.NewDateTime(carbon.Now())
 		user = models.User{
-			Name:            name,
+			Name:            googleUser.Name,
 			Email:           email,
-			GoogleID:        &googleID,
-			Avatar:          &avatar,
+			GoogleID:        &googleUser.Sub,
+			Avatar:          &googleUser.Picture,
 			EmailVerifiedAt: now,
 		}
 		if err := facades.Orm().Query().Create(&user); err != nil {
-			return ctx.Response().Json(500, http.Json{"message": "Gagal membuat akun", "error": err.Error()})
+			return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat akun", "error": err.Error()})
 		}
 	}
 
 	// Generate JWT token
 	token, err := facades.Auth(ctx).Login(&user)
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal membuat token", "error": err.Error()})
+		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat token", "error": err.Error()})
 	}
 
 	// Audit log
 	auditSvc.Log(ctx, &user.ID, services.ActionLogin, nil)
 
-	return ctx.Response().Json(200, http.Json{
+	return ctx.Response().Json(200, contractshttp.Json{
 		"message": "Login berhasil",
 		"data": map[string]interface{}{
 			"token": token,
