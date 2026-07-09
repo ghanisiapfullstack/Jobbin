@@ -11,5 +11,6 @@ func Migrations() []schema.Migration {
 		&migrations.M20260621172547CreateUsersTable{},
 		&migrations.M20260621172548CreateApplicationsTable{},
 		&migrations.M20260623000001CreateAuditLogsTable{},
+		&migrations.M20260707000001AlterUsersAddGoogleFields{},
 	}
 }

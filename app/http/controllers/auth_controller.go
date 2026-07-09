@@ -59,7 +59,7 @@ func (r *AuthController) Register(ctx http.Context) http.Response {
 	user := models.User{
 		Name:     ctx.Request().Input("name"),
 		Email:    ctx.Request().Input("email"),
-		Password: hashedPassword,
+		Password: &hashedPassword,
 	}
 	user.EmailVerifyToken = &token
 
@@ -169,7 +169,7 @@ func (r *AuthController) Login(ctx http.Context) http.Response {
 		return ctx.Response().Json(401, http.Json{"message": "Email atau password salah"})
 	}
 
-	if !facades.Hash().Check(ctx.Request().Input("password"), user.Password) {
+	if user.Password == nil || !facades.Hash().Check(ctx.Request().Input("password"), *user.Password) {
 		return ctx.Response().Json(401, http.Json{"message": "Email atau password salah"})
 	}
 
