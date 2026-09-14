@@ -11,7 +11,6 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 
-
 # Copy source
 COPY . .
 
