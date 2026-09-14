@@ -26,6 +26,7 @@ func Api() {
 		router.Post("/register", authController.Register)
 		router.Post("/verify-email", authController.VerifyEmail)
 		router.Post("/resend-verification", authController.ResendVerification)
+		router.Post("/google", authController.GoogleAuth)
 		router.Middleware(loginRateLimit.Handle()).Post("/login", authController.Login)
 	})
 

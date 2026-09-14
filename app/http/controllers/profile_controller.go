@@ -91,7 +91,7 @@ func (r *ProfileController) UpdatePassword(ctx http.Context) http.Response {
 	}
 
 	// Verifikasi password lama
-	if !facades.Hash().Check(ctx.Request().Input("current_password"), user.Password) {
+	if user.Password == nil || !facades.Hash().Check(ctx.Request().Input("current_password"), *user.Password) {
 		return ctx.Response().Json(422, http.Json{
 			"message": "Input tidak valid",
 			"errors":  map[string]string{"current_password": "Password lama tidak sesuai"},
@@ -104,7 +104,7 @@ func (r *ProfileController) UpdatePassword(ctx http.Context) http.Response {
 		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
 	}
 
-	user.Password = hashedPassword
+	user.Password = &hashedPassword
 	if err := facades.Orm().Query().Save(&user); err != nil {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal menyimpan", "error": err.Error()})
 	}
