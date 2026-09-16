@@ -47,7 +47,7 @@ APP_ENV=local
 APP_DEBUG=true
 APP_HOST=127.0.0.1
 APP_PORT=3000
-APP_KEY=your-32-char-secret-key-here!!!
+APP_KEY=replace-with-random-32-char-key!
 
 JWT_SECRET=your-32-char-jwt-secret-here!!!
 
@@ -103,6 +103,7 @@ Base URL: `/api/v1`
 | GET | `/auth/me` | ✅ | Data user yang login |
 | POST | `/auth/verify-email` | ❌ | Verifikasi email dengan token |
 | POST | `/auth/resend-verification` | ❌ | Kirim ulang email verifikasi |
+| POST | `/auth/google` | ❌ | Login Google menggunakan access token |
 
 ### Profile
 
@@ -142,7 +143,9 @@ users
 ├── id                    (PK)
 ├── name                  (varchar 100)
 ├── email                 (varchar 255, unique)
-├── password              (varchar 255, bcrypt)
+├── password              (varchar 255, bcrypt, nullable untuk akun Google)
+├── google_id             (varchar 255, nullable, unique)
+├── avatar                (varchar 500, nullable)
 ├── email_verified_at     (timestamp, nullable)
 ├── email_verify_token    (varchar, nullable)
 ├── created_at
@@ -171,6 +174,9 @@ applications
 ```bash
 # Jalankan semua migration
 go run . artisan migrate
+
+# Periksa status sebelum dan sesudah migration
+go run . artisan migrate:status
 
 # Rollback migration terakhir
 go run . artisan migrate:rollback
@@ -207,18 +213,35 @@ az containerapp update \
   --resource-group jobbin-rg \
   --image jobbinregistry.azurecr.io/jobbin-backend:latest
 
-# 5. Jalankan migration (kalau ada schema baru)
+# 5. Periksa dan jalankan migration (kalau ada schema baru)
 az containerapp exec \
   --name jobbin-backend \
-  --resource-group jobbin-rg \
-  --command "./main artisan migrate"
+  --resource-group jobbin-rg
+
+# Di dalam container:
+./main artisan migrate:status
+./main artisan migrate
+./main artisan migrate:status
+exit
 ```
+
+Migration production tidak dijalankan otomatis oleh workflow CD. Untuk perubahan schema:
+
+1. Gunakan migration yang backward-compatible dan utamakan perubahan additive.
+2. Ambil backup/branch Neon sebelum perubahan berisiko.
+3. Jalankan `migrate:status` dan pastikan schema serta bookkeeping konsisten.
+4. Jalankan `migrate`, lalu pastikan seluruh migration berstatus `Ran`.
+5. Jalankan regression test login manual, Google OAuth, dan endpoint yang terdampak.
+
+Jika `migrate:status` menunjukkan `Pending` tetapi tabel/kolom sudah ada, hentikan rollout. Jangan menjalankan `migrate:reset`, `migrate:fresh`, menghapus tabel, atau menandai migration sebagai `Ran` sebelum schema aktual diverifikasi.
+
+Workflow CD menunggu revision terbaru menjadi ready, memastikan image SHA sesuai commit, dan memastikan `APP_KEY` tetap memakai Azure secret reference. Setelah itu workflow menguji `POST /auth/google` menggunakan dummy token; respons yang diharapkan adalah `401 Token Google tidak valid`. Dengan demikian route terbaru, startup container, dan koneksi backend ke Google ikut tervalidasi tanpa menggunakan credential pengguna.
 
 ### Environment Variables Production
 
 | Key | Keterangan |
 |-----|------------|
-| `APP_KEY` | Random 32 char string |
+| `APP_KEY` | Random tepat 32 karakter; simpan sebagai Azure secret reference |
 | `JWT_SECRET` | Random 32 char string |
 | `DB_HOST` | Neon PostgreSQL host |
 | `DB_DATABASE` | Nama database |
