@@ -4,7 +4,7 @@ on:
   push:
     branches: [develop, main]
   pull_request:
-    branches: [main]
+    branches: [develop, main]
 
 jobs:
   ci:
@@ -22,8 +22,19 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Test
+        run: go test ./...
+
       - name: Build
         run: go build ./...
 
       - name: Vet
         run: go vet ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.4.0
+
+      - name: Verify production container build
+        run: docker build --tag jobbin-backend:ci .

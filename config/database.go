@@ -42,10 +42,13 @@ func init() {
 			},
 		},
 		"pool": map[string]any{
-			"max_idle_conns":    10,
-			"max_open_conns":    100,
-			"conn_max_idletime": 3600,
-			"conn_max_lifetime": 3600,
+			// Keep the application-side pool deliberately small. Production uses
+			// Neon/PgBouncer, so opening 100 connections per replica only wastes
+			// database capacity without increasing throughput for this workload.
+			"max_idle_conns":    config.Env("DB_MAX_IDLE_CONNS", 2),
+			"max_open_conns":    config.Env("DB_MAX_OPEN_CONNS", 10),
+			"conn_max_idletime": config.Env("DB_CONN_MAX_IDLE_TIME", 300),
+			"conn_max_lifetime": config.Env("DB_CONN_MAX_LIFETIME", 1800),
 		},
 		"slow_threshold": 200,
 		"migrations": map[string]any{
