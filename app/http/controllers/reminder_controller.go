@@ -24,19 +24,25 @@ func (r *ReminderController) Index(ctx http.Context) http.Response {
 	today := carbon.Now().ToDateString()
 	tomorrow := carbon.Now().AddDay().ToDateString()
 
-	var todayApps []models.Application
-	facades.Orm().Query().
+	var applications []models.Application
+	if err := facades.Orm().Query().
 		Where("user_id", userID).
-		Where("reminder_date", today).
+		WhereIn("reminder_date", []any{today, tomorrow}).
 		Where("is_archived", false).
-		Find(&todayApps)
+		Find(&applications); err != nil {
+		facades.Log().Errorf("Failed to load reminders: %v", err)
+		return ctx.Response().Json(500, http.Json{"message": "Gagal mengambil reminder"})
+	}
 
-	var tomorrowApps []models.Application
-	facades.Orm().Query().
-		Where("user_id", userID).
-		Where("reminder_date", tomorrow).
-		Where("is_archived", false).
-		Find(&tomorrowApps)
+	todayApps := make([]models.Application, 0)
+	tomorrowApps := make([]models.Application, 0)
+	for _, application := range applications {
+		if application.ReminderDate != nil && *application.ReminderDate == today {
+			todayApps = append(todayApps, application)
+		} else {
+			tomorrowApps = append(tomorrowApps, application)
+		}
+	}
 
 	return ctx.Response().Json(200, http.Json{
 		"message": "Berhasil",

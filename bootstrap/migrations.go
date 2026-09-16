@@ -12,5 +12,7 @@ func Migrations() []schema.Migration {
 		&migrations.M20260621172548CreateApplicationsTable{},
 		&migrations.M20260623000001CreateAuditLogsTable{},
 		&migrations.M20260707000001AlterUsersAddGoogleFields{},
+		&migrations.M20260916000001AddApplicationQueryIndexes{},
+		&migrations.M20260916000002CreateRefreshSessionsTable{},
 	}
 }

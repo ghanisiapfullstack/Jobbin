@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/goravel/framework/contracts/http"
@@ -100,12 +101,15 @@ func (r *ApplicationController) Store(ctx http.Context) http.Response {
 	// Hitung posisi terakhir di kolom status ini
 	status := ctx.Request().Input("status", "wishlist")
 	var lastApp models.Application
-	facades.Orm().Query().
+	if err := facades.Orm().Query().
 		Where("user_id", userID).
 		Where("status", status).
 		Where("is_archived", false).
 		Order("position desc").
-		First(&lastApp)
+		First(&lastApp); err != nil {
+		facades.Log().Errorf("Failed to determine application position: %v", err)
+		return ctx.Response().Json(500, http.Json{"message": "Gagal menentukan posisi lamaran"})
+	}
 
 	position := lastApp.Position + 1.0
 
@@ -151,14 +155,11 @@ func (r *ApplicationController) Update(ctx http.Context) http.Response {
 
 	id := ctx.Request().RouteInt("id")
 	var application models.Application
-	if err := facades.Orm().Query().Find(&application, id); err != nil {
+	if err := facades.Orm().Query().Where("id", id).Where("user_id", userID).Find(&application); err != nil {
 		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
 	}
 	if application.ID == 0 {
 		return ctx.Response().Json(404, http.Json{"message": "Data tidak ditemukan"})
-	}
-	if application.UserID != userID {
-		return ctx.Response().Json(403, http.Json{"message": "Forbidden"})
 	}
 
 	validator, err := facades.Validation().Make(ctx, ctx.Request().All(), map[string]string{
@@ -224,20 +225,9 @@ func (r *ApplicationController) UpdatePosition(ctx http.Context) http.Response {
 	}
 
 	id := ctx.Request().RouteInt("id")
-	var application models.Application
-	if err := facades.Orm().Query().Find(&application, id); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
-	}
-	if application.ID == 0 {
-		return ctx.Response().Json(404, http.Json{"message": "Data tidak ditemukan"})
-	}
-	if application.UserID != userID {
-		return ctx.Response().Json(403, http.Json{"message": "Forbidden"})
-	}
-
 	validator, err := facades.Validation().Make(ctx, ctx.Request().All(), map[string]string{
 		"position": "required",
-		"status":   "in:wishlist,applied,interview,offer,rejected",
+		"status":   "required|in:wishlist,applied,interview,offer,rejected",
 	})
 	if err != nil {
 		return ctx.Response().Json(500, http.Json{"message": "Kesalahan validasi", "error": err.Error()})
@@ -248,21 +238,24 @@ func (r *ApplicationController) UpdatePosition(ctx http.Context) http.Response {
 
 	positionStr := ctx.Request().Input("position")
 	position, err2 := strconv.ParseFloat(positionStr, 64)
-	if err2 != nil {
+	if err2 != nil || math.IsNaN(position) || math.IsInf(position, 0) {
 		return ctx.Response().Json(422, http.Json{"message": "Position harus berupa angka"})
 	}
-	application.Position = position
-	if status := ctx.Request().Input("status"); status != "" {
-		application.Status = status
-	}
-
-	if err := facades.Orm().Query().Save(&application); err != nil {
+	status := ctx.Request().Input("status")
+	result, err := facades.Orm().Query().Model(&models.Application{}).
+		Where("id", id).
+		Where("user_id", userID).
+		Update(map[string]interface{}{"position": position, "status": status})
+	if err != nil {
 		return ctx.Response().Json(500, http.Json{"message": "Gagal mengupdate posisi", "error": err.Error()})
+	}
+	if result.RowsAffected == 0 {
+		return ctx.Response().Json(404, http.Json{"message": "Data tidak ditemukan"})
 	}
 
 	return ctx.Response().Json(200, http.Json{
 		"message": "Posisi diperbarui",
-		"data":    map[string]interface{}{"position": application.Position, "status": application.Status},
+		"data":    map[string]interface{}{"position": position, "status": status},
 	})
 }
 

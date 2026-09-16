@@ -111,6 +111,13 @@ func (r *ProfileController) UpdatePassword(ctx http.Context) http.Response {
 
 	// Audit log
 	services.NewAuditService().Log(ctx, &user.ID, services.ActionChangePassword, nil)
+	// Password changes invalidate every remembered device and the current JWT.
+	services.NewSessionService().RevokeUser(user.ID)
+	if err := facades.Auth(ctx).Logout(); err != nil {
+		facades.Log().Warningf("Failed to blacklist access token after password change: %v", err)
+	}
 
-	return ctx.Response().Json(200, http.Json{"message": "Password berhasil diupdate"})
+	return ctx.Response().Cookie(services.ExpiredRefreshCookie()).Json(200, http.Json{
+		"message": "Password berhasil diupdate. Silakan login kembali.",
+	})
 }
