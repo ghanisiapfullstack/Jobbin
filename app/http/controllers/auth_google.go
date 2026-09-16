@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	contractshttp "github.com/goravel/framework/contracts/http"
 	"github.com/goravel/framework/facades"
@@ -13,6 +14,8 @@ import (
 	"jobbin/backend/app/models"
 	"jobbin/backend/app/services"
 )
+
+var googleHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 type googleUserInfo struct {
 	Sub           string `json:"sub"`
@@ -39,12 +42,11 @@ func (r *AuthController) GoogleAuth(ctx contractshttp.Context) contractshttp.Res
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := googleHTTPClient.Do(req)
 	if err != nil || resp.StatusCode != 200 {
 		return ctx.Response().Json(401, contractshttp.Json{"message": "Token Google tidak valid"})
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -69,7 +71,10 @@ func (r *AuthController) GoogleAuth(ctx contractshttp.Context) contractshttp.Res
 
 	// Cek user existing
 	var user models.User
-	facades.Orm().Query().Where("email", email).First(&user)
+	if err := facades.Orm().Query().Where("email", email).First(&user); err != nil {
+		facades.Log().Errorf("Failed to load Google user: %v", err)
+		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal memproses login Google"})
+	}
 
 	if user.ID != 0 {
 		// User sudah ada — merge google_id kalau belum ada
@@ -78,7 +83,10 @@ func (r *AuthController) GoogleAuth(ctx contractshttp.Context) contractshttp.Res
 			if user.Avatar == nil && googleUser.Picture != "" {
 				user.Avatar = &googleUser.Picture
 			}
-			facades.Orm().Query().Save(&user)
+			if err := facades.Orm().Query().Save(&user); err != nil {
+				facades.Log().Errorf("Failed to link Google account: %v", err)
+				return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal menghubungkan akun Google"})
+			}
 		}
 	} else {
 		// User baru — buat akun otomatis
@@ -101,10 +109,16 @@ func (r *AuthController) GoogleAuth(ctx contractshttp.Context) contractshttp.Res
 		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat token", "error": err.Error()})
 	}
 
+	session, refreshToken, err := services.NewSessionService().Create(user.ID, ctx.Request().InputBool("remember_me", false))
+	if err != nil {
+		facades.Log().Errorf("Failed to create Google refresh session: %v", err)
+		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat sesi login"})
+	}
+
 	// Audit log
 	auditSvc.Log(ctx, &user.ID, services.ActionLogin, nil)
 
-	return ctx.Response().Json(200, contractshttp.Json{
+	return ctx.Response().Cookie(services.RefreshCookie(refreshToken, session)).Json(200, contractshttp.Json{
 		"message": "Login berhasil",
 		"data": map[string]interface{}{
 			"token": token,

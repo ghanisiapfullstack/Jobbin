@@ -21,69 +21,40 @@ func (r *ReminderService) SendDailyReminders() {
 	today := carbon.Now().ToDateString()
 	tomorrow := carbon.Now().AddDay().ToDateString()
 
-	// Kirim reminder hari H
-	r.sendReminderDayOf(today)
-
-	// Kirim reminder H-1
-	r.sendReminderDayBefore(tomorrow)
+	r.sendReminders(today, "reminder_sent_day_of", "day_of")
+	r.sendReminders(tomorrow, "reminder_sent_day_before", "day_before")
 }
 
-func (r *ReminderService) sendReminderDayOf(today string) {
+func (r *ReminderService) sendReminders(date, sentColumn, reminderType string) {
 	var applications []models.Application
-	facades.Orm().Query().
-		Where("reminder_date", today).
-		Where("reminder_sent_day_of", false).
+	if err := facades.Orm().Query().
+		With("User").
+		Where("reminder_date", date).
+		Where(sentColumn, false).
 		Where("is_archived", false).
-		Find(&applications)
-
-	for _, app := range applications {
-		// Ambil user
-		var user models.User
-		if err := facades.Orm().Query().Find(&user, app.UserID); err != nil || user.ID == 0 {
-			continue
-		}
-
-		if err := r.emailService.SendReminderEmail(
-			user.Email, user.Name,
-			app.JobTitle, app.Company,
-			"day_of",
-		); err != nil {
-			facades.Log().Warningf("Failed to send day_of reminder for app %d: %v", app.ID, err)
-			continue
-		}
-
-		// Update flag
-		app.ReminderSentDayOf = true
-		facades.Orm().Query().Save(&app)
-		facades.Log().Infof("Reminder day_of sent for app %d (%s @ %s)", app.ID, app.JobTitle, app.Company)
+		Find(&applications); err != nil {
+		facades.Log().Warningf("Failed to load %s reminders: %v", reminderType, err)
+		return
 	}
-}
-
-func (r *ReminderService) sendReminderDayBefore(tomorrow string) {
-	var applications []models.Application
-	facades.Orm().Query().
-		Where("reminder_date", tomorrow).
-		Where("reminder_sent_day_before", false).
-		Where("is_archived", false).
-		Find(&applications)
 
 	for _, app := range applications {
-		var user models.User
-		if err := facades.Orm().Query().Find(&user, app.UserID); err != nil || user.ID == 0 {
+		if app.User.ID == 0 {
 			continue
 		}
 
 		if err := r.emailService.SendReminderEmail(
-			user.Email, user.Name,
+			app.User.Email, app.User.Name,
 			app.JobTitle, app.Company,
-			"day_before",
+			reminderType,
 		); err != nil {
-			facades.Log().Warningf("Failed to send day_before reminder for app %d: %v", app.ID, err)
+			facades.Log().Warningf("Failed to send %s reminder for app %d: %v", reminderType, app.ID, err)
 			continue
 		}
 
-		app.ReminderSentDayBefore = true
-		facades.Orm().Query().Save(&app)
-		facades.Log().Infof("Reminder day_before sent for app %d (%s @ %s)", app.ID, app.JobTitle, app.Company)
+		if _, err := facades.Orm().Query().Model(&models.Application{}).Where("id", app.ID).Update(sentColumn, true); err != nil {
+			facades.Log().Warningf("Failed to mark %s reminder for app %d as sent: %v", reminderType, app.ID, err)
+			continue
+		}
+		facades.Log().Infof("Reminder %s sent for app %d (%s @ %s)", reminderType, app.ID, app.JobTitle, app.Company)
 	}
 }
