@@ -62,6 +62,12 @@ jobs:
               --output tsv)"
 
             if [[ -n "$latest_revision" && "$latest_revision" == "$latest_ready_revision" ]]; then
+              health_state="$(az containerapp revision show \
+                --name "$CONTAINER_APP_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --revision "$latest_revision" \
+                --query properties.healthState \
+                --output tsv)"
               running_state="$(az containerapp revision show \
                 --name "$CONTAINER_APP_NAME" \
                 --resource-group "$RESOURCE_GROUP" \
@@ -81,7 +87,9 @@ jobs:
                 --query "properties.template.containers[0].env[?name=='APP_KEY'].secretRef | [0]" \
                 --output tsv)"
 
-              if [[ "$running_state" == "Running" && "$deployed_image" == "$IMAGE_NAME" && -n "$app_key_secret_ref" ]]; then
+              # Azure reports a healthy revision at its configured replica ceiling as
+              # RunningAtMaxScale rather than Running. Both are ready states.
+              if [[ "$health_state" == "Healthy" && "$running_state" == Running* && "$deployed_image" == "$IMAGE_NAME" && -n "$app_key_secret_ref" ]]; then
                 echo "Revision $latest_revision is ready with the expected image and APP_KEY secret reference."
                 exit 0
               fi
