@@ -115,12 +115,6 @@ func (r *AuthController) GoogleAuth(ctx contractshttp.Context) contractshttp.Res
 		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat sesi login"})
 	}
 
-	session, refreshToken, err := services.NewSessionService().Create(user.ID, ctx.Request().InputBool("remember_me", false))
-	if err != nil {
-		facades.Log().Errorf("Failed to create Google refresh session: %v", err)
-		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat sesi login"})
-	}
-
 	// Audit log
 	auditSvc.Log(ctx, &user.ID, services.ActionLogin, nil)
 
