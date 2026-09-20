@@ -48,7 +48,7 @@ func (s *EmailService) SendVerificationEmail(toEmail, toName, token string) erro
 </head>
 <body>
   <div class="card">
-    <h1>Welcome to Jobbin! 🎯</h1>
+    <h1>Welcome to Jobbin!</h1>
     <p>Hi %s,</p>
     <p>Thanks for signing up! Please verify your email address to start tracking your job applications.</p>
     <a href="%s" class="btn">VERIFY EMAIL →</a>
@@ -69,6 +69,34 @@ func (s *EmailService) SendVerificationEmail(toEmail, toName, token string) erro
 	}
 
 	_, err := s.client.Emails.Send(params)
+	return err
+}
+
+// SendPasswordResetEmail sends a short-lived, single-use password reset link.
+func (s *EmailService) SendPasswordResetEmail(toEmail, toName, token string) error {
+	resetLink := fmt.Sprintf("%s/reset-password?token=%s", s.frontendURL, token)
+	html := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;background:#FFD600;margin:0;padding:40px 20px;color:#1a1a1a">
+  <div style="background:#fff;border:3px solid #1a1a1a;box-shadow:6px 6px 0 #1a1a1a;max-width:480px;margin:0 auto;padding:32px">
+    <h1 style="font-size:26px;margin:0 0 12px">Reset your Jobbin password</h1>
+    <p>Hi %s,</p>
+    <p>Use the button below to create a new password. This link expires in 30 minutes and can only be used once.</p>
+    <a href="%s" style="display:inline-block;background:#FFD600;color:#1a1a1a;font-weight:700;padding:12px 24px;border:2px solid #1a1a1a;box-shadow:4px 4px 0 #1a1a1a;text-decoration:none;margin:16px 0">RESET PASSWORD →</a>
+    <p style="word-break:break-all;font-size:13px">%s</p>
+    <p style="font-size:12px;color:#5f5f5f;margin-top:24px">If you did not request this, you can safely ignore this email.</p>
+  </div>
+</body>
+</html>`, toName, resetLink, resetLink)
+
+	_, err := s.client.Emails.Send(&resend.SendEmailRequest{
+		From:    fmt.Sprintf("%s <%s>", s.fromName, s.fromAddress),
+		To:      []string{toEmail},
+		Subject: "Reset your Jobbin password",
+		Html:    html,
+	})
 	return err
 }
 

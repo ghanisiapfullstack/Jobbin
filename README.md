@@ -237,6 +237,18 @@ Jika `migrate:status` menunjukkan `Pending` tetapi tabel/kolom sudah ada, hentik
 
 Workflow CD menunggu revision terbaru menjadi ready, memastikan image SHA sesuai commit, dan memastikan `APP_KEY` tetap memakai Azure secret reference. Setelah itu workflow menguji `POST /auth/google` menggunakan dummy token; respons yang diharapkan adalah `401 Token Google tidak valid`. Dengan demikian route terbaru, startup container, dan koneksi backend ke Google ikut tervalidasi tanpa menggunakan credential pengguna.
 
+### Reminder production
+
+Container App dapat scale-to-zero, jadi scheduler di dalam proses tidak boleh menjadi satu-satunya pemicu reminder. Jalankan command berikut dari Azure Container Apps Job dengan cron `0 0 * * *` (Azure mengevaluasi cron dalam UTC; hasilnya pukul 07.00 WIB):
+
+```bash
+./main artisan reminders:send
+```
+
+Command mengembalikan exit code gagal jika query atau pengiriman reminder gagal, sehingga Azure dapat melakukan retry dan mencatat kegagalan job. Flag `reminder_sent_day_before` dan `reminder_sent_day_of` tetap mencegah pengiriman ulang untuk reminder yang sudah berhasil.
+
+Set `RUN_IN_PROCESS_JOBS=false` di Container App hanya setelah Azure Job tersebut aktif. Ini mencegah scheduler internal dan job eksternal mengirim reminder pada waktu yang sama. Untuk development lokal, biarkan nilainya `true`.
+
 ### Environment Variables Production
 
 | Key | Keterangan |

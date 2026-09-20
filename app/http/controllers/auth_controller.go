@@ -3,6 +3,7 @@ package controllers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"strings"
 
 	"github.com/goravel/framework/contracts/http"
@@ -23,7 +24,7 @@ func (r *AuthController) Register(ctx http.Context) http.Response {
 	validator, err := facades.Validation().Make(ctx, ctx.Request().All(), map[string]string{
 		"name":     "required|min_len:2|max_len:100",
 		"email":    "required|email",
-		"password": "required|min_len:6",
+		"password": "required|min_len:8|max_len:72",
 	})
 	if err != nil {
 		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": map[string]string{
@@ -55,7 +56,7 @@ func (r *AuthController) Register(ctx http.Context) http.Response {
 	// Hash password
 	hashedPassword, err := facades.Hash().Make(ctx.Request().Input("password"))
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
+		return internalError(ctx, "Gagal memproses registrasi", "AUTH_PASSWORD_HASH_FAILED", err)
 	}
 
 	// Generate verify token
@@ -74,7 +75,7 @@ func (r *AuthController) Register(ctx http.Context) http.Response {
 	user.EmailVerifyExpires = carbon.NewDateTime(carbon.Now().AddHours(24))
 
 	if err := facades.Orm().Query().Create(&user); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal membuat akun", "error": err.Error()})
+		return internalError(ctx, "Gagal membuat akun", "AUTH_REGISTER_FAILED", err)
 	}
 
 	// Kirim email verifikasi via Resend
@@ -95,7 +96,7 @@ func (r *AuthController) VerifyEmail(ctx http.Context) http.Response {
 		"token": "required",
 	})
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Kesalahan validasi", "error": err.Error()})
+		return internalError(ctx, "Gagal memvalidasi permintaan", "AUTH_VALIDATION_FAILED", err)
 	}
 	if validator.Fails() {
 		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": validator.Errors().All()})
@@ -132,7 +133,7 @@ func (r *AuthController) ResendVerification(ctx http.Context) http.Response {
 		"email": "required|email",
 	})
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Kesalahan validasi", "error": err.Error()})
+		return internalError(ctx, "Gagal memvalidasi permintaan", "AUTH_VALIDATION_FAILED", err)
 	}
 	if validator.Fails() {
 		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": validator.Errors().All()})
@@ -212,7 +213,7 @@ func (r *AuthController) Login(ctx http.Context) http.Response {
 
 	token, err := facades.Auth(ctx).Login(&user)
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal membuat token", "error": err.Error()})
+		return internalError(ctx, "Gagal membuat sesi login", "AUTH_TOKEN_FAILED", err)
 	}
 
 	session, refreshToken, err := services.NewSessionService().Create(user.ID, ctx.Request().InputBool("remember_me", false))
@@ -296,10 +297,74 @@ func (r *AuthController) Logout(ctx http.Context) http.Response {
 	services.NewSessionService().Revoke(ctx.Request().Cookie(services.RefreshCookieName))
 
 	if err := facades.Auth(ctx).Logout(); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal logout", "error": err.Error()})
+		return internalError(ctx, "Gagal logout", "AUTH_LOGOUT_FAILED", err)
 	}
 
 	return ctx.Response().Cookie(services.ExpiredRefreshCookie()).Json(200, http.Json{"message": "Logout berhasil"})
+}
+
+// ForgotPassword POST /api/v1/auth/forgot-password
+// The response is intentionally generic to prevent account enumeration.
+func (r *AuthController) ForgotPassword(ctx http.Context) http.Response {
+	validator, err := facades.Validation().Make(ctx, ctx.Request().All(), map[string]string{"email": "required|email"})
+	if err != nil {
+		return internalError(ctx, "Gagal memproses permintaan", "PASSWORD_RESET_VALIDATION_FAILED", err)
+	}
+	if validator.Fails() {
+		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": validator.Errors().All()})
+	}
+
+	message := "Jika email tersebut terdaftar, kami telah mengirimkan tautan reset password."
+	email := strings.ToLower(strings.TrimSpace(ctx.Request().Input("email")))
+	var user models.User
+	if err := facades.Orm().Query().Where("email", email).First(&user); err != nil {
+		facades.Log().Errorf("PASSWORD_RESET_LOOKUP_FAILED: %v", err)
+		return ctx.Response().Json(200, http.Json{"message": message})
+	}
+	if user.ID == 0 || user.EmailVerifiedAt == nil {
+		return ctx.Response().Json(200, http.Json{"message": message})
+	}
+
+	token, err := services.NewPasswordResetService().Create(user.ID)
+	if err != nil {
+		facades.Log().Errorf("PASSWORD_RESET_CREATE_FAILED: %v", err)
+		return ctx.Response().Json(200, http.Json{"message": message})
+	}
+	if err := services.NewEmailService().SendPasswordResetEmail(user.Email, user.Name, token); err != nil {
+		facades.Log().Warningf("PASSWORD_RESET_EMAIL_FAILED: %v", err)
+	}
+	return ctx.Response().Json(200, http.Json{"message": message})
+}
+
+// ResetPassword POST /api/v1/auth/reset-password
+func (r *AuthController) ResetPassword(ctx http.Context) http.Response {
+	validator, err := facades.Validation().Make(ctx, ctx.Request().All(), map[string]string{
+		"token":    "required",
+		"password": "required|min_len:8|max_len:72",
+	})
+	if err != nil {
+		return internalError(ctx, "Gagal memproses permintaan", "PASSWORD_RESET_VALIDATION_FAILED", err)
+	}
+	if validator.Fails() {
+		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": validator.Errors().All()})
+	}
+
+	hashedPassword, err := facades.Hash().Make(ctx.Request().Input("password"))
+	if err != nil {
+		return internalError(ctx, "Gagal menyimpan password baru", "PASSWORD_RESET_HASH_FAILED", err)
+	}
+	user, err := services.NewPasswordResetService().Consume(ctx.Request().Input("token"), hashedPassword)
+	if errors.Is(err, services.ErrInvalidPasswordResetToken) {
+		return ctx.Response().Json(422, http.Json{"message": "Tautan reset tidak valid, sudah digunakan, atau kedaluwarsa"})
+	}
+	if err != nil {
+		return internalError(ctx, "Gagal menyimpan password baru", "PASSWORD_RESET_FAILED", err)
+	}
+
+	services.NewSessionService().RevokeUser(user.ID)
+	return ctx.Response().Cookie(services.ExpiredRefreshCookie()).Json(200, http.Json{
+		"message": "Password berhasil diubah. Silakan login kembali.",
+	})
 }
 
 func verificationToken() (string, error) {

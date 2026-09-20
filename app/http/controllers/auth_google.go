@@ -99,14 +99,14 @@ func (r *AuthController) GoogleAuth(ctx contractshttp.Context) contractshttp.Res
 			EmailVerifiedAt: now,
 		}
 		if err := facades.Orm().Query().Create(&user); err != nil {
-			return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat akun", "error": err.Error()})
+			return internalError(ctx, "Gagal membuat akun", "GOOGLE_ACCOUNT_CREATE_FAILED", err)
 		}
 	}
 
 	// Generate JWT token
 	token, err := facades.Auth(ctx).Login(&user)
 	if err != nil {
-		return ctx.Response().Json(500, contractshttp.Json{"message": "Gagal membuat token", "error": err.Error()})
+		return internalError(ctx, "Gagal membuat sesi login", "GOOGLE_AUTH_TOKEN_FAILED", err)
 	}
 
 	session, refreshToken, err := services.NewSessionService().Create(user.ID, ctx.Request().InputBool("remember_me", false))

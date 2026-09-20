@@ -17,6 +17,7 @@ func init() {
 		"locale":          "en",
 		"fallback_locale": "en",
 		"key":             config.Env("APP_KEY", ""),
+		"in_process_jobs": config.Env("RUN_IN_PROCESS_JOBS", true),
 
 		// Frontend URL — dipakai untuk generate link di email
 		"frontend_url": config.Env("FRONTEND_URL", "http://localhost:5173"),
