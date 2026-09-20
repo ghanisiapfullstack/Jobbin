@@ -33,6 +33,8 @@ func Api() {
 		router.Post("/register", authController.Register)
 		router.Post("/verify-email", authController.VerifyEmail)
 		router.Post("/resend-verification", authController.ResendVerification)
+		router.Middleware(mailRateLimit.Handle()).Post("/forgot-password", authController.ForgotPassword)
+		router.Middleware(loginRateLimit.Handle()).Post("/reset-password", authController.ResetPassword)
 		router.Post("/google", authController.GoogleAuth)
 		router.Middleware(refreshRateLimit.Handle()).Post("/refresh", authController.Refresh)
 		router.Middleware(loginRateLimit.Handle()).Post("/login", authController.Login)

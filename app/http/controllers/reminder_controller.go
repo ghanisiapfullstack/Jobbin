@@ -66,7 +66,7 @@ func (r *ReminderController) Test(ctx http.Context) http.Response {
 		"Frontend Developer", "Tokopedia",
 		"day_of",
 	); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal kirim test email", "error": err.Error()})
+		return internalError(ctx, "Gagal mengirim test email", "REMINDER_TEST_EMAIL_FAILED", err)
 	}
 
 	return ctx.Response().Json(200, http.Json{"message": "Test email reminder berhasil dikirim."})

@@ -47,7 +47,7 @@ func (r *ApplicationController) Index(ctx http.Context) http.Response {
 
 	var applications []models.Application
 	if err := query.Find(&applications); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal mengambil data", "error": err.Error()})
+		return internalError(ctx, "Gagal mengambil data", "APPLICATION_LIST_FAILED", err)
 	}
 
 	return ctx.Response().Json(200, http.Json{
@@ -66,7 +66,7 @@ func (r *ApplicationController) Show(ctx http.Context) http.Response {
 	id := ctx.Request().RouteInt("id")
 	var application models.Application
 	if err := facades.Orm().Query().Find(&application, id); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
+		return internalError(ctx, "Gagal mengambil lamaran", "APPLICATION_SHOW_FAILED", err)
 	}
 	if application.ID == 0 {
 		return ctx.Response().Json(404, http.Json{"message": "Data tidak ditemukan"})
@@ -92,10 +92,19 @@ func (r *ApplicationController) Store(ctx http.Context) http.Response {
 		"status":    "in:wishlist,applied,interview,offer,rejected",
 	})
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Kesalahan validasi", "error": err.Error()})
+		return internalError(ctx, "Gagal memvalidasi lamaran", "APPLICATION_VALIDATION_FAILED", err)
 	}
 	if validator.Fails() {
 		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": validator.Errors().All()})
+	}
+
+	details, detailErrors := validateApplicationDetails(
+		ctx.Request().Input("employment_type"),
+		ctx.Request().Input("salary_min"),
+		ctx.Request().Input("salary_max"),
+	)
+	if len(detailErrors) > 0 {
+		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": detailErrors})
 	}
 
 	// Hitung posisi terakhir di kolom status ini
@@ -114,11 +123,14 @@ func (r *ApplicationController) Store(ctx http.Context) http.Response {
 	position := lastApp.Position + 1.0
 
 	application := models.Application{
-		UserID:   userID,
-		JobTitle: helpers.SanitizeString(ctx.Request().Input("job_title")),
-		Company:  helpers.SanitizeString(ctx.Request().Input("company")),
-		Status:   status,
-		Position: position,
+		UserID:         userID,
+		JobTitle:       helpers.SanitizeString(ctx.Request().Input("job_title")),
+		Company:        helpers.SanitizeString(ctx.Request().Input("company")),
+		Status:         status,
+		Position:       position,
+		EmploymentType: details.EmploymentType,
+		SalaryMin:      details.SalaryMin,
+		SalaryMax:      details.SalaryMax,
 	}
 
 	// Optional fields
@@ -138,7 +150,7 @@ func (r *ApplicationController) Store(ctx http.Context) http.Response {
 	}
 
 	if err := facades.Orm().Query().Create(&application); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal menyimpan", "error": err.Error()})
+		return internalError(ctx, "Gagal menyimpan lamaran", "APPLICATION_CREATE_FAILED", err)
 	}
 
 	appID := application.ID
@@ -156,7 +168,7 @@ func (r *ApplicationController) Update(ctx http.Context) http.Response {
 	id := ctx.Request().RouteInt("id")
 	var application models.Application
 	if err := facades.Orm().Query().Where("id", id).Where("user_id", userID).Find(&application); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
+		return internalError(ctx, "Gagal mengambil lamaran", "APPLICATION_SHOW_FAILED", err)
 	}
 	if application.ID == 0 {
 		return ctx.Response().Json(404, http.Json{"message": "Data tidak ditemukan"})
@@ -169,16 +181,28 @@ func (r *ApplicationController) Update(ctx http.Context) http.Response {
 		"status":    "in:wishlist,applied,interview,offer,rejected",
 	})
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Kesalahan validasi", "error": err.Error()})
+		return internalError(ctx, "Gagal memvalidasi lamaran", "APPLICATION_VALIDATION_FAILED", err)
 	}
 	if validator.Fails() {
 		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": validator.Errors().All()})
+	}
+
+	details, detailErrors := validateApplicationDetails(
+		ctx.Request().Input("employment_type"),
+		ctx.Request().Input("salary_min"),
+		ctx.Request().Input("salary_max"),
+	)
+	if len(detailErrors) > 0 {
+		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": detailErrors})
 	}
 
 	// Update fields
 	application.JobTitle = helpers.SanitizeString(ctx.Request().Input("job_title", application.JobTitle))
 	application.Company = helpers.SanitizeString(ctx.Request().Input("company", application.Company))
 	application.Status = ctx.Request().Input("status", application.Status)
+	application.EmploymentType = details.EmploymentType
+	application.SalaryMin = details.SalaryMin
+	application.SalaryMax = details.SalaryMax
 
 	if url := ctx.Request().Input("url"); url != "" {
 		sanitizedURL := helpers.SanitizeString(url)
@@ -209,7 +233,7 @@ func (r *ApplicationController) Update(ctx http.Context) http.Response {
 	}
 
 	if err := facades.Orm().Query().Save(&application); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal mengupdate", "error": err.Error()})
+		return internalError(ctx, "Gagal memperbarui lamaran", "APPLICATION_UPDATE_FAILED", err)
 	}
 
 	appID := application.ID
@@ -230,7 +254,7 @@ func (r *ApplicationController) UpdatePosition(ctx http.Context) http.Response {
 		"status":   "required|in:wishlist,applied,interview,offer,rejected",
 	})
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Kesalahan validasi", "error": err.Error()})
+		return internalError(ctx, "Gagal memvalidasi posisi", "APPLICATION_POSITION_VALIDATION_FAILED", err)
 	}
 	if validator.Fails() {
 		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": validator.Errors().All()})
@@ -247,7 +271,7 @@ func (r *ApplicationController) UpdatePosition(ctx http.Context) http.Response {
 		Where("user_id", userID).
 		Update(map[string]interface{}{"position": position, "status": status})
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal mengupdate posisi", "error": err.Error()})
+		return internalError(ctx, "Gagal memperbarui posisi", "APPLICATION_POSITION_UPDATE_FAILED", err)
 	}
 	if result.RowsAffected == 0 {
 		return ctx.Response().Json(404, http.Json{"message": "Data tidak ditemukan"})
@@ -269,7 +293,7 @@ func (r *ApplicationController) ToggleArchive(ctx http.Context) http.Response {
 	id := ctx.Request().RouteInt("id")
 	var application models.Application
 	if err := facades.Orm().Query().Find(&application, id); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
+		return internalError(ctx, "Gagal mengambil lamaran", "APPLICATION_ARCHIVE_LOOKUP_FAILED", err)
 	}
 	if application.ID == 0 {
 		return ctx.Response().Json(404, http.Json{"message": "Data tidak ditemukan"})
@@ -280,7 +304,7 @@ func (r *ApplicationController) ToggleArchive(ctx http.Context) http.Response {
 
 	application.IsArchived = !application.IsArchived
 	if err := facades.Orm().Query().Save(&application); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal mengupdate", "error": err.Error()})
+		return internalError(ctx, "Gagal memperbarui arsip", "APPLICATION_ARCHIVE_UPDATE_FAILED", err)
 	}
 
 	action := services.ActionArchiveApp
@@ -310,7 +334,7 @@ func (r *ApplicationController) Destroy(ctx http.Context) http.Response {
 	id := ctx.Request().RouteInt("id")
 	var application models.Application
 	if err := facades.Orm().Query().Find(&application, id); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
+		return internalError(ctx, "Gagal mengambil lamaran", "APPLICATION_DELETE_LOOKUP_FAILED", err)
 	}
 	if application.ID == 0 {
 		return ctx.Response().Json(404, http.Json{"message": "Data tidak ditemukan"})
@@ -320,7 +344,7 @@ func (r *ApplicationController) Destroy(ctx http.Context) http.Response {
 	}
 
 	if _, err := facades.Orm().Query().Delete(&application); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal menghapus", "error": err.Error()})
+		return internalError(ctx, "Gagal menghapus lamaran", "APPLICATION_DELETE_FAILED", err)
 	}
 
 	appID := application.ID

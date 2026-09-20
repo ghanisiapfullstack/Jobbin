@@ -28,6 +28,9 @@ func (r *ProfileController) Show(ctx http.Context) http.Response {
 			"email":             user.Email,
 			"email_verified_at": user.EmailVerifiedAt,
 			"created_at":        user.CreatedAt,
+			"avatar":            user.Avatar,
+			"has_password":      user.Password != nil,
+			"auth_methods":      authMethods(user),
 		},
 	})
 }
@@ -53,7 +56,7 @@ func (r *ProfileController) UpdateName(ctx http.Context) http.Response {
 
 	user.Name = ctx.Request().Input("name")
 	if err := facades.Orm().Query().Save(&user); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal menyimpan", "error": err.Error()})
+		return internalError(ctx, "Gagal menyimpan profil", "PROFILE_UPDATE_FAILED", err)
 	}
 
 	// Audit log
@@ -78,7 +81,7 @@ func (r *ProfileController) UpdatePassword(ctx http.Context) http.Response {
 
 	validator, err := facades.Validation().Make(ctx, ctx.Request().All(), map[string]string{
 		"current_password": "required",
-		"new_password":     "required|min_len:6",
+		"new_password":     "required|min_len:8|max_len:72",
 	})
 	if err != nil {
 		return ctx.Response().Json(422, http.Json{"message": "Input tidak valid", "errors": map[string]string{
@@ -101,12 +104,12 @@ func (r *ProfileController) UpdatePassword(ctx http.Context) http.Response {
 	// Hash password baru
 	hashedPassword, err := facades.Hash().Make(ctx.Request().Input("new_password"))
 	if err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Terjadi kesalahan", "error": err.Error()})
+		return internalError(ctx, "Gagal memproses password baru", "PROFILE_PASSWORD_HASH_FAILED", err)
 	}
 
 	user.Password = &hashedPassword
 	if err := facades.Orm().Query().Save(&user); err != nil {
-		return ctx.Response().Json(500, http.Json{"message": "Gagal menyimpan", "error": err.Error()})
+		return internalError(ctx, "Gagal menyimpan password baru", "PROFILE_PASSWORD_UPDATE_FAILED", err)
 	}
 
 	// Audit log
@@ -120,4 +123,15 @@ func (r *ProfileController) UpdatePassword(ctx http.Context) http.Response {
 	return ctx.Response().Cookie(services.ExpiredRefreshCookie()).Json(200, http.Json{
 		"message": "Password berhasil diupdate. Silakan login kembali.",
 	})
+}
+
+func authMethods(user models.User) []string {
+	methods := make([]string, 0, 2)
+	if user.Password != nil {
+		methods = append(methods, "password")
+	}
+	if user.GoogleID != nil {
+		methods = append(methods, "google")
+	}
+	return methods
 }

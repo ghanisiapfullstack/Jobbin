@@ -14,5 +14,7 @@ func Migrations() []schema.Migration {
 		&migrations.M20260707000001AlterUsersAddGoogleFields{},
 		&migrations.M20260916000001AddApplicationQueryIndexes{},
 		&migrations.M20260916000002CreateRefreshSessionsTable{},
+		&migrations.M20260919000001AddApplicationJobDetails{},
+		&migrations.M20260920000001CreatePasswordResetTokensTable{},
 	}
 }
