@@ -32,6 +32,7 @@ func Boot() contractsfoundation.Application {
 func Commands() []contractsconsole.Command {
 	return []contractsconsole.Command{
 		appconsole.NewSendRemindersCommand(),
+		appconsole.NewDailyJobsCommand(),
 	}
 }
 
